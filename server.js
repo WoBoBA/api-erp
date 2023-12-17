@@ -1,29 +1,51 @@
-var express = require("express");
-var cors = require("cors");
-var app = express();
+const express = require("express");
+const cors = require("cors");
+const app = express();
 const bcrypt = require("bcrypt");
 const saltRounds = 10;
-var bodyParser = require('body-parser')
-var jsonParser = bodyParser.json()
-var jwt = require("jsonwebtoken");
+const bodyParser = require('body-parser')
+const jsonParser = bodyParser.json()
+const jwt = require("jsonwebtoken");
 const secret = "Fullstack-login";
+require('dotenv').config()
 
 app.use(cors());
 app.use(express.json());
 // get the client
 const mysql = require("mysql2");
+//const sql = require("mssql");
 
-var host = "localhost";
+const host = "::";
 if (process.env.NODE_ENV == "production") {
   host = "mysql-server";
-}
+} 
+
+/* const pool = new sql.ConnectionPool({
+  user: process.env.DB_USER,
+  password: process.env.DB_PWD,
+  server: process.env.DB_SERVER,
+  database: process.env.DB_NAME,
+  options: {
+    encrypt: true,
+    trustServerCertificate: true, // Disable SSL verification
+  },
+})
+
+pool.connect(err => {
+  if (err) {
+    console.log(err)
+  } else {
+    console.log("OK")
+  }
+   
+}) */
 
 // create the connection to database
-const connection = mysql.createConnection({
+ const connection = mysql.createConnection({
   host: host,
-  user: "root",
-  password: "1234",
-  database: "mydb",
+  user: process.env.MYSQL_USER,
+  password: process.env.MYSQL_PASSWORD,
+  database: process.env.MYSQL_NAME,
 });
 
 app.post("/authen", jsonParser, function (req, res, next) {
@@ -121,10 +143,9 @@ app.delete("/users", jsonParser, function (req, res, next) {
   );
 });
 
-
 app.post("/production", jsonParser, function (req, res, next) {
     connection.execute(
-      "INSERT INTO `tbl_jobcard`(`modal`, `shift`, `exp`, `shipment`, `qty`, `datestar`, `dateend`, `ass_line`) VALUES (?,?,?,?,?,?,?,?)",
+      "INSERT INTO `tbl_jobcard`(`modal`, `shift`, `exp`, `shipment`, `qty`, `datestar`, `dateend`, `ass_line`, `alternate`, `status`) VALUES (?,?,?,?,?,?,?,?,?,?)",
       [
         req.body.modal,
         req.body.shift,
@@ -134,6 +155,8 @@ app.post("/production", jsonParser, function (req, res, next) {
         req.body.datestar,
         req.body.dateend,
         req.body.ass_line,
+        req.body.alternate,
+        req.body.status,
       ],
       function (err, results, fields) {
         if (err) {
@@ -175,17 +198,17 @@ app.get("/line", function (req, res, next) {
   });
 }); 
 
-/* app.get("/model", function (req, res, next) {
+app.get("/model", function (req, res, next) {
   connection.query("SELECT * FROM tbl_mas_model", function (err, results, fields) {
     res.json(results);
   });
-});  */
+});
 
 app.get("/model/:line", function (req, res, next) {
   //res.send(req.params);
   const {line} = req.params;
   connection.query(
-    'SELECT * FROM tbl_mas_model WHERE line = ?',
+    'SELECT model_name FROM tbl_mas_model WHERE line = ?',
     [line],
     function (err, results, fields) {
       if (err) {
@@ -196,7 +219,71 @@ app.get("/model/:line", function (req, res, next) {
     }
   ); 
 }); 
- 
+
+app.get("/production/:line/:model/:datestar", function (req, res, next) {
+  //res.send(req.params);
+  const {line, model, datestar} = req.params;
+  connection.query(
+    'SELECT job,modal,shift,exp,shipment,qty,datestar,line_name,alternate,status FROM view_jobcard  where ass_line = ? and modal = ? and datestar = ? and status = 0',
+    [line, model, datestar],
+    function (err, results, fields) {
+      if (err) {
+        res.json({ status: "error", message: err });
+        return;
+      }
+      res.json(results);
+    }
+  );  
+}); 
+
+app.get("/bam/:job", function (req, res, next) {
+  //res.send(req.params);
+  const {job} = req.params;
+  connection.query(
+    'SELECT job,bam_code,qty,req FROM view_jobcard_ban WHERE job = ?',
+    [job],
+    function (err, results, fields) {
+      if (err) {
+        res.json({ status: "error", message: err });
+        return;
+      }
+      res.json(results);
+    }
+  );  
+}); 
+
+app.get("/alternate/:model", function (req, res, next) {
+  //res.send(req.params);
+  const {model} = req.params;
+  connection.query(
+    'SELECT distinct alternate FROM bill_of_material WHERE itempart = ? AND isactive = 1',
+    [model],
+    function (err, results, fields) {
+      if (err) {
+        res.json({ status: "error", message: err });
+        return;
+      }
+      res.json(results);
+    }
+  ); 
+}); 
+
+app.get("/jobbam/:job/:qty", function (req, res, next) {
+  //res.send(req.params);
+  const {job,qty} = req.params;
+  connection.query(
+    'CALL get_job_bam (?, ?)',
+    [job,qty],
+    function (err, results, fields) {
+      if (err) {
+        res.json({ status: "error", message: err });
+        return;
+      }
+      res.json(results);
+    }
+  );
+});
+
 app.listen(3336, function () {
   console.log("CORS-enabled web server listening on port 3336");
 });
